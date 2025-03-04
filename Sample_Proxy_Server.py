@@ -32,50 +32,48 @@ def load_memes(folder):
 # Global meme pool loaded at startup.
 MEME_POOL = load_memes(MEME_FOLDER)
 
-def overlay_meme_on_image(original_body):
+def serve_meme_image(client_socket):
     """
-    Opens the original image from bytes and overlays the top 50% 
-    with a meme image chosen randomly from MEME_POOL.
-    
-    Returns a tuple (modified_image_bytes, image_format) on success,
-    or (None, None) if processing fails.
+    Instead of processing the original image, read a meme image from disk
+    and build a new HTTP response with its contents.
     """
-    try:
-        original_image = Image.open(BytesIO(original_body))
-    except Exception as e:
-        print("Error opening original image:", e)
-        return None, None
-
-    width, height = original_image.size
-    half_height = height // 2
-
     if not MEME_POOL:
-        print("Meme pool is empty!")
-        return None, None
+        client_socket.send(b"HTTP/1.1 404 Not Found\r\n\r\nNo memes available.")
+        client_socket.close()
+        return
 
     meme_path = random.choice(MEME_POOL)
     try:
-        meme_image = Image.open(meme_path)
+        with open(meme_path, "rb") as f:
+            meme_data = f.read()
     except Exception as e:
         print("Error opening meme image:", e)
-        return None, None
+        client_socket.send(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+        client_socket.close()
+        return
 
-    # Resize meme to match the original width and cover 50% of its height
-    meme_resized = meme_image.resize((width, half_height))
-    # Convert both images to RGBA for proper overlay
-    original_image = original_image.convert("RGBA")
-    meme_resized = meme_resized.convert("RGBA")
-    
-    # Paste the meme onto the top half of the original image.
-    # The meme_resized fully covers that region.
-    original_image.paste(meme_resized, (0, 0))
-    
-    # Save the modified image to a bytes buffer.
-    output = BytesIO()
-    # Use the original format if available; otherwise default to PNG.
-    fmt = original_image.format if original_image.format is not None else "PNG"
-    original_image.save(output, format=fmt)
-    return output.getvalue(), fmt
+    # Determine Content-Type based on file extension
+    ext = os.path.splitext(meme_path)[1].lower()
+    if ext in ['.jpg', '.jpeg']:
+        content_type = "image/jpeg"
+    elif ext == '.png':
+        content_type = "image/png"
+    elif ext == '.gif':
+        content_type = "image/gif"
+    elif ext == '.webp':
+        content_type = "image/webp"
+    else:
+        content_type = "application/octet-stream"
+
+    # Build and send the HTTP response with new meme image as body.
+    response = (
+        "HTTP/1.1 200 OK\r\n"
+        f"Content-Type: {content_type}\r\n"
+        f"Content-Length: {len(meme_data)}\r\n"
+        "\r\n"
+    ).encode('utf-8') + meme_data
+    client_socket.send(response)
+    client_socket.close()
 
 def serve_easter_egg(client_socket):
     """
@@ -90,7 +88,6 @@ def serve_easter_egg(client_socket):
     try:
         with open(meme_path, "rb") as f:
             meme_data = f.read()
-
         ext = os.path.splitext(meme_path)[1].lower()
         if ext in ['.jpg', '.jpeg']:
             mime = "image/jpeg"
@@ -100,16 +97,15 @@ def serve_easter_egg(client_socket):
             mime = "image/gif"
         else:
             mime = "application/octet-stream"
-
         b64_data = base64.b64encode(meme_data).decode('utf-8')
         html_content = f"""
         <html>
         <head>
-            <title>Surprise!</title>
+            <title>Ester Egg</title>
             <meta charset="utf-8">
         </head>
         <body>
-            <img src="data:{mime};base64,{b64_data}" style="width:100vw; height:auto; object-fit:cover;" alt="Easter Egg Meme"/>
+            <img src="data:{mime};base64,{b64_data}" style="width:100vw; height:auto; object-fit:cover;" alt="Easter Egg"/>
         </body>
         </html>
         """
@@ -134,7 +130,6 @@ def handle_client(client_socket):
     try:
         first_line = request.split(b'\r\n')[0]
         parts = first_line.split(b' ')
-        print(parts)
         if len(parts) < 2:
             client_socket.close()
             return
@@ -143,86 +138,13 @@ def handle_client(client_socket):
 
         # Easter egg for google.ca
         if parsed_url.hostname and parsed_url.hostname.lower() == "google.ca":
-            return serve_easter_egg(client_socket)
+            serve_easter_egg(client_socket)
+            return
 
-        # If the request is for an image (based on its file extension),
-        # fetch the original image from the remote server,
-        # overlay 50% of it with a meme, and send the modified image.
+        # If the request is for an image endpoint, ignore the original image
+        # and serve a meme image from disk instead.
         if parsed_url.path.lower().startswith('/image'):
-            host = parsed_url.hostname
-            path = parsed_url.path if parsed_url.path else '/'
-            if parsed_url.query:
-                path += '?' + parsed_url.query
-            port = parsed_url.port if parsed_url.port else 80
-
-            remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            remote_socket.connect((host, port))
-            remote_socket.send(request)
-
-            # Buffer the entire response.
-            response_data = b""
-            while True:
-                chunk = remote_socket.recv(CHUNK_SIZE)
-                if not chunk:
-                    break
-                response_data += chunk
-            remote_socket.close()
-
-            # Split the HTTP response into headers and body.
-            header_end = response_data.find(b'\r\n\r\n')
-            if header_end == -1:
-                client_socket.send(response_data)
-                client_socket.close()
-                return
-            headers_bytes = response_data[:header_end]
-            body = response_data[header_end+4:]
-
-            # Modify the image: overlay the top half with a meme.
-            modified_body, new_format = overlay_meme_on_image(body)
-            if modified_body is None:
-                client_socket.send(response_data)
-                client_socket.close()
-                return
-
-            # Update headers: adjust Content-Length and (if needed) Content-Type.
-            # Update headers: adjust Content-Length and (if needed) Content-Type.
-            headers_lines = headers_bytes.split(b'\r\n')
-            new_headers_lines = []
-            content_type_set = False
-
-            for line in headers_lines:
-                if line.lower().startswith(b"content-length:"):
-                    new_headers_lines.append(b"Content-Length: " + str(len(modified_body)).encode('utf-8'))
-                elif line.lower().startswith(b"content-type:"):
-                    content_type_set = True
-                    if new_format.lower() in ("png"):
-                        new_headers_lines.append(b"Content-Type: image/png")
-                    elif new_format.lower() in ("jpg", "jpeg"):
-                        new_headers_lines.append(b"Content-Type: image/jpeg")
-                    elif new_format.lower() == "gif":
-                        new_headers_lines.append(b"Content-Type: image/gif")
-                    elif new_format.lower() == "webp":
-                        new_headers_lines.append(b"Content-Type: image/webp")
-                    else:
-                        new_headers_lines.append(line)  # Keep original header if format isn't recognized
-                else:
-                    new_headers_lines.append(line)
-
-            # Ensure a Content-Type header is set if it was missing
-            if not content_type_set:
-                if new_format.lower() in ("png"):
-                    new_headers_lines.append(b"Content-Type: image/png")
-                elif new_format.lower() in ("jpg", "jpeg"):
-                    new_headers_lines.append(b"Content-Type: image/jpeg")
-                elif new_format.lower() == "gif":
-                    new_headers_lines.append(b"Content-Type: image/gif")
-                elif new_format.lower() == "webp":
-                    new_headers_lines.append(b"Content-Type: image/webp")
-
-            new_headers = b'\r\n'.join(new_headers_lines)
-            final_response = new_headers + b'\r\n\r\n' + modified_body
-            client_socket.send(final_response)
-            client_socket.close()
+            serve_meme_image(client_socket)
             return
 
         # For non-image requests, forward traffic normally.
@@ -240,10 +162,16 @@ def handle_client(client_socket):
         remote_socket.connect((host, port))
         remote_socket.send(request)
 
+        while True:
+            response = remote_socket.recv(CHUNK_SIZE)
+            if not response:
+                break
+            client_socket.send(response)
+            time.sleep(DELAY)
+        remote_socket.close()
     except Exception as e:
         print(f"Error handling client: {e}")
     client_socket.close()
-    return  
 
 def start_proxy():
     print(f"Proxy running on {HOST}:{PORT}, with a delay of {DELAY} seconds per {CHUNK_SIZE} bytes.")
