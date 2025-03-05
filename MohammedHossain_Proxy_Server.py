@@ -33,7 +33,7 @@ MEME_POOL = load_memes(MEME_FOLDER)
 def serve_meme_image(client_socket):
     #    read a meme image from folder and build a new HTTP response with its contents.   
     if not MEME_POOL:
-        client_socket.send(b"HTTP/1.1 404 Not Found\r\n\r\nNo memes available.")
+        client_socket.send(b"HTTP/1.1 404 Not Found\r\n\r\n")
         client_socket.close()
         return
 
@@ -72,9 +72,8 @@ def serve_meme_image(client_socket):
 
 def serve_easter_egg(client_socket):
     # When request to google.ca is detected serve cutom html page with meme 
-
     if not MEME_POOL:
-        client_socket.send(b"HTTP/1.1 404 Not Found\r\n\r\nNo memes available.")
+        client_socket.send(b"404 Not Found\r\n\r\n")
         client_socket.close()
         return
 
@@ -115,7 +114,7 @@ def serve_easter_egg(client_socket):
         client_socket.send(response.encode('utf-8'))
     except Exception as e:
         print(f"Error serving easter egg: {e}")
-        client_socket.send(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+        client_socket.send(b"500 Internal Server Error\r\n\r\n")
     client_socket.close()
 
 def handle_client(client_socket):
