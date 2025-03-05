@@ -23,7 +23,7 @@ def load_memes(folder):
     memes = []
     try:
         for file in os.listdir(folder):
-            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                 memes.append(os.path.join(folder, file))
     except Exception as e:
         print(f"Error loading memes from folder {folder}: {e}")
@@ -33,10 +33,7 @@ def load_memes(folder):
 MEME_POOL = load_memes(MEME_FOLDER)
 
 def serve_meme_image(client_socket):
-    """
-    Instead of processing the original image, read a meme image from disk
-    and build a new HTTP response with its contents.
-    """
+    #    read a meme image from folder and build a new HTTP response with its contents.   
     if not MEME_POOL:
         client_socket.send(b"HTTP/1.1 404 Not Found\r\n\r\nNo memes available.")
         client_socket.close()
@@ -45,7 +42,7 @@ def serve_meme_image(client_socket):
     meme_path = random.choice(MEME_POOL)
     try:
         with open(meme_path, "rb") as f:
-            meme_data = f.read()
+            meme_data = f.read()        #store file in binary mode 
     except Exception as e:
         print("Error opening meme image:", e)
         client_socket.send(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
@@ -76,9 +73,8 @@ def serve_meme_image(client_socket):
     client_socket.close()
 
 def serve_easter_egg(client_socket):
-    """
-    When a request to google.ca is detected, serve a custom HTML page with an embedded meme.
-    """
+    # When request to google.ca is detected serve cutom html page with meme 
+
     if not MEME_POOL:
         client_socket.send(b"HTTP/1.1 404 Not Found\r\n\r\nNo memes available.")
         client_socket.close()
@@ -105,7 +101,7 @@ def serve_easter_egg(client_socket):
             <meta charset="utf-8">
         </head>
         <body>
-            <img src="data:{mime};base64,{b64_data}" style="width:100vw; height:auto; object-fit:cover;" alt="Easter Egg"/>
+            <img src="data:{mime};base64,{b64_data}" style="width:100vw; height:auto; object-fit:cover; content-align:center" alt="Easter Egg"/>
         </body>
         </html>
         """
@@ -142,12 +138,12 @@ def handle_client(client_socket):
             return
 
         # If the request is for an image endpoint, ignore the original image
-        # and serve a meme image from disk instead.
+        # and serve a meme image from meme foldere instead.
         if parsed_url.path.lower().startswith('/image'):
             serve_meme_image(client_socket)
             return
 
-        # For non-image requests, forward traffic normally.
+        # For non-image requests forward traffic normally 
         host = parsed_url.hostname
         if not host:
             client_socket.close()
