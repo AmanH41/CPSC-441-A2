@@ -9,11 +9,11 @@ from io import BytesIO
 from PIL import Image
 
 # Configuration
-HOST = '127.0.0.1'  # Localhost
-PORT = 8080         # Port to run the proxy on
-DELAY = 1.0         # Delay in seconds per chunk of data
-CHUNK_SIZE = 1024   # Size of data chunks to send
-MEME_FOLDER = "memes"  # Folder containing meme images
+HOST = '127.0.0.1'      # Localhost
+PORT = 8080             # Port to run the proxy on
+DELAY = 1.0             # Delay in seconds per chunk of data
+CHUNK_SIZE = 1024       # Size of data chunks to send
+MEME_FOLDER = "memes"   # Folder containing meme images
 
 def load_memes(folder):
     # Loads meme file paths from the given folder. 
@@ -63,8 +63,8 @@ def serve_meme_image(client_socket):
     # Build and send the HTTP response with new meme image as body.
     response = (
         "HTTP/1.1 200 OK\r\n"
-        f"Content-Type: {content_type}\r\n"
-        f"Content-Length: {len(meme_data)}\r\n"
+        f"Content-Type: {content_type}\r\n"                 #content type based on meme file extension 
+        f"Content-Length: {len(meme_data)}\r\n"             #the length of the meme data in btytes 
         "\r\n"
     ).encode('utf-8') + meme_data
     client_socket.send(response)
@@ -92,6 +92,7 @@ def serve_easter_egg(client_socket):
         else:
             mime = "application/octet-stream"
         b64_data = base64.b64encode(meme_data).decode('utf-8')
+        # Constructs an HTML page that embeds the image directly via a data URL.
         html_content = f"""
         <html>
         <head>
@@ -103,6 +104,7 @@ def serve_easter_egg(client_socket):
         </body>
         </html>
         """
+        #Constructs an HTTP response
         response = (
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/html\r\n"
@@ -117,11 +119,13 @@ def serve_easter_egg(client_socket):
     client_socket.close()
 
 def handle_client(client_socket):
+    #read incoming HTTP request 
     request = client_socket.recv(4096)
     if not request:
         client_socket.close()
         return
     try:
+        #split the HTTP Request and obtain the method and url 
         first_line = request.split(b'\r\n')[0]
         parts = first_line.split(b' ')
         if len(parts) < 2:
@@ -147,13 +151,16 @@ def handle_client(client_socket):
             client_socket.close()
             return
 
+        #build path and determine portt (defaulting to 80)
         path = parsed_url.path if parsed_url.path else '/'
         if parsed_url.query:
             path += '?' + parsed_url.query
         port = parsed_url.port if parsed_url.port else 80
 
+        #open a new socket to the target hostt tand port 
         remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         remote_socket.connect((host, port))
+        #send the request 
         remote_socket.send(request)
 
         while True:
@@ -172,7 +179,7 @@ def start_proxy():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((HOST, PORT))
-    server_socket.listen(5)
+    server_socket.listen(5)     
 
     while True:
         client_socket, addr = server_socket.accept()
