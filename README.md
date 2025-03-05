@@ -14,7 +14,7 @@ Since the proxy server listens on 127.0.0.1:8080 by default, you need to configu
 
 Running Server 
 1. Start the Proxy Server: Run the Python script:
-python  30106232_Proxy_Server.py
+python  MohammedHossain_Proxy_Server.py
 
 
 2. Test the Proxy:
